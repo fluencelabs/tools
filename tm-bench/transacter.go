@@ -26,14 +26,15 @@ const (
 	// see https://github.com/tendermint/go-rpc/blob/develop/server/handlers.go#L313
 	pingPeriod = (30 * 9 / 10) * time.Second
 
-	// the size of a transaction in bytes.
-	txSize = 250
+	sendFrequency = 10
 )
 
 type transacter struct {
 	Target            string
 	Rate              int
 	Connections       int
+	TxSize            int
+	SingleKey         bool
 	BroadcastTxMethod string
 
 	conns   []*websocket.Conn
@@ -43,11 +44,13 @@ type transacter struct {
 	logger log.Logger
 }
 
-func newTransacter(target string, connections, rate int, broadcastTxMethod string) *transacter {
+func newTransacter(target string, connections, rate int, txSize int, singleKey bool, broadcastTxMethod string) *transacter {
 	return &transacter{
 		Target:            target,
 		Rate:              rate,
 		Connections:       connections,
+		TxSize:            txSize,
+		SingleKey:         singleKey,
 		BroadcastTxMethod: broadcastTxMethod,
 		conns:             make([]*websocket.Conn, connections),
 		logger:            log.NewNopLogger(),
@@ -130,7 +133,7 @@ func (t *transacter) sendLoop(connIndex int) {
 	var txNumber = 0
 
 	pingsTicker := time.NewTicker(pingPeriod)
-	txsTicker := time.NewTicker(1 * time.Second)
+	txsTicker := time.NewTicker(time.Second / sendFrequency)
 	defer func() {
 		pingsTicker.Stop()
 		txsTicker.Stop()
@@ -150,9 +153,9 @@ func (t *transacter) sendLoop(connIndex int) {
 		case <-txsTicker.C:
 			startTime := time.Now()
 
-			for i := 0; i < t.Rate; i++ {
+			for i := 0; i < t.Rate / sendFrequency; i++ {
 				// each transaction embeds connection index, tx number and hash of the hostname
-				tx := generateTx(connIndex, txNumber, hostnameHash)
+				tx := generateTx(connIndex, txNumber, t.TxSize, t.SingleKey, hostnameHash)
 				paramsJSON, err := json.Marshal(map[string]interface{}{"tx": hex.EncodeToString(tx)})
 				if err != nil {
 					fmt.Printf("failed to encode params: %v\n", err)
@@ -176,7 +179,7 @@ func (t *transacter) sendLoop(connIndex int) {
 			}
 
 			timeToSend := time.Now().Sub(startTime)
-			time.Sleep(time.Second - timeToSend)
+			time.Sleep(time.Second / sendFrequency - timeToSend)
 			logger.Info(fmt.Sprintf("sent %d transactions", t.Rate), "took", timeToSend)
 		case <-pingsTicker.C:
 			// go-rpc server closes the connection in the absence of pings
@@ -205,13 +208,17 @@ func connect(host string) (*websocket.Conn, *http.Response, error) {
 	return websocket.DefaultDialer.Dial(u.String(), nil)
 }
 
-func generateTx(connIndex int, txNumber int, hostnameHash [md5.Size]byte) []byte {
+func generateTx(connIndex int, txNumber int, txSize int, singleKey bool, hostnameHash [md5.Size]byte) []byte {
 	tx := make([]byte, txSize)
 
-	binary.PutUvarint(tx[:8], uint64(connIndex))
+	if singleKey {
+		tx[0] = byte('z')
+		tx[1] = byte('=')
+	}
+	binary.PutUvarint(tx[2:8], uint64(connIndex))
 	binary.PutUvarint(tx[8:16], uint64(txNumber))
 	copy(tx[16:32], hostnameHash[:16])
-	binary.PutUvarint(tx[32:40], uint64(time.Now().Unix()))
+	binary.PutUvarint(tx[32:40], uint64(time.Now().UnixNano() / int64(time.Microsecond)))
 
 	// 40-* random data
 	if _, err := rand.Read(tx[40:]); err != nil {
