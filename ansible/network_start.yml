@@ -1,0 +1,5 @@
+- name: Tendermint network start
+  hosts: "{{ lookup('env','TF_VAR_TESTNET_NAME') }}:tag_Environment_{{ lookup('env','TF_VAR_TESTNET_NAME') | regex_replace('-','_') }}"
+  tasks:
+    - name: Start node in screen tendermint46657
+      shell: screen -d -m -S tendermint46657 bash -c 'tendermint node --proxy_app=kvstore'

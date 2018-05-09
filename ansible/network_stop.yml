@@ -1,0 +1,5 @@
+- name: Tendermint network stop
+  hosts: "{{ lookup('env','TF_VAR_TESTNET_NAME') }}:tag_Environment_{{ lookup('env','TF_VAR_TESTNET_NAME') | regex_replace('-','_') }}"
+  tasks:
+    - name: Stop screen with tendermint process
+      shell: screen -S tendermint46657 -X stuff $'\003'

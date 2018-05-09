@@ -1,0 +1,8 @@
+- name: Tendermint network status
+  hosts: "{{ lookup('env','TF_VAR_TESTNET_NAME') }}:tag_Environment_{{ lookup('env','TF_VAR_TESTNET_NAME') | regex_replace('-','_') }}"
+  tasks:
+    - name: Probe status and abci_info
+      shell: echo "$(curl -s 'localhost:46657/status' | grep latest_block_height)" "$(curl -s 'localhost:46657/abci_info' | grep size)"
+      register: status_abci_info
+
+    - debug: msg="{{status_abci_info.stdout}}"

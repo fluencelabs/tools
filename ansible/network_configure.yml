@@ -1,0 +1,6 @@
+- name: Tendermint network configure
+  hosts: "{{ lookup('env','TF_VAR_TESTNET_NAME') }}:tag_Environment_{{ lookup('env','TF_VAR_TESTNET_NAME') | regex_replace('-','_') }}"
+  tasks:
+    - name: Change provided config value
+      ini_file: dest=/home/ec2-user/.tendermint/config/config.toml section={{section}} option={{option}} value={{value}}
+

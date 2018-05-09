@@ -1,0 +1,7 @@
+- name: Tendermint network delete
+  hosts: "{{ lookup('env','TF_VAR_TESTNET_NAME') }}:tag_Environment_{{ lookup('env','TF_VAR_TESTNET_NAME') | regex_replace('-','_') }}"
+  tasks:
+    - name: Delete tendermint home directory
+      file:
+        path: /home/ec2-user/.tendermint
+        state: absent

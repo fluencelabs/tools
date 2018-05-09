@@ -1,0 +1,65 @@
+- name: Tendermint network prepare
+  hosts: "{{ lookup('env','TF_VAR_TESTNET_NAME') }}:tag_Environment_{{ lookup('env','TF_VAR_TESTNET_NAME') | regex_replace('-','_') }}"
+  tasks:
+    - name: Run tendermint init
+      shell: tendermint init
+
+    - name: Run tendermint show_node_id
+      shell: tendermint show_node_id
+      register: tendermint_node_id
+    - set_fact:
+        node_id: "{{ tendermint_node_id.stdout }}"
+
+    - name: Run tendermint show_validator
+      shell: tendermint show_validator
+      register: tendermint_validator
+    - set_fact:
+        validator_info: "{{ tendermint_validator.stdout }}"
+
+    - name: Combine persistent peer list
+      set_fact:
+        peer_list: |
+          {% set comma = joiner(",") %}
+          {% for item in play_hosts -%}
+            {{ comma() }}{{ hostvars[item].node_id }}@{{ hostvars[item].inventory_hostname }}:46656
+          {%- endfor %}
+
+    - name: Combine genesis information
+      set_fact:
+        genesis: |
+          {% set comma = joiner(",") %}
+          {
+            "genesis_time": "1970-01-01T00:00:00Z",
+            "chain_id": "testnet-servers",
+            "validators": [
+              {% for item in play_hosts -%}
+                {{ comma() }}{
+                  "pub_key": {{ hostvars[item].validator_info }},
+                  "power": 1000,
+                  "name": "{{ hostvars[item].inventory_hostname }}"
+                }
+              {%- endfor %}
+            ],
+            "app_hash": ""
+          }
+
+    - debug:
+        msg: "{{ peer_list }}"
+
+    - debug:
+        msg: "{{ genesis }}"
+
+    - name: Change persistent_peers in config.toml
+      ini_file: dest=/home/ec2-user/.tendermint/config/config.toml section=p2p option=persistent_peers value='"{{ peer_list | replace("\n", "") }}"'
+
+    - name: Change create_empty_blocks in config.toml
+      ini_file: dest=/home/ec2-user/.tendermint/config/config.toml section=consensus option=create_empty_blocks value=false
+
+    - name: Change max_block_size_txs in config.toml
+      ini_file: dest=/home/ec2-user/.tendermint/config/config.toml section=consensus option=max_block_size_txs value=10000
+
+    - name: Copy genesis information
+      copy:
+        content: "{{ genesis }}"
+        dest: /home/ec2-user/.tendermint/config/genesis.json
+
