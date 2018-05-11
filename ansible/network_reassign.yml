@@ -1,0 +1,27 @@
+- name: Tendermint network reassign
+  hosts: "{{ lookup('env','TF_VAR_TESTNET_NAME') }}:tag_Environment_{{ lookup('env','TF_VAR_TESTNET_NAME') | regex_replace('-','_') }}"
+  tasks:
+    - name: Delete old addrbook
+      file:
+        path: /home/ec2-user/.tendermint/config/addrbook.json
+        state: absent
+
+    - name: Run tendermint show_node_id
+      shell: tendermint show_node_id
+      register: tendermint_node_id
+    - set_fact:
+        node_id: "{{ tendermint_node_id.stdout }}"
+
+    - name: Combine persistent peer list
+      set_fact:
+        peer_list: |
+          {% set comma = joiner(",") %}
+          {% for item in play_hosts -%}
+            {{ comma() }}{{ hostvars[item].node_id }}@{{ hostvars[item].inventory_hostname }}:46656
+          {%- endfor %}
+
+    - debug:
+        msg: "{{ peer_list }}"
+
+    - name: Change persistent_peers in config.toml
+      ini_file: dest=/home/ec2-user/.tendermint/config/config.toml section=p2p option=persistent_peers value='"{{ peer_list | replace("\n", "") }}"'
